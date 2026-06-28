@@ -4,18 +4,13 @@ import jpype
 import jpype.imports
 import sqlite3
 import re
-import urllib.request
-import json
 
 # --- ১. সারা বাংলাদেশের এড্রেস ডেটাবেজ ডাউনলোড ও লোড (BDRIS / BD Geocode) ---
 @st.cache_data
 def load_bangladesh_geo_data():
     """ওপেন সোর্স গিটহাব থেকে সারা বাংলাদেশের বিভাগ, জেলা, উপজেলা ও ইউনিয়নের আপডেট ডেটাবেজ নেওয়া"""
     try:
-        # বাংলাদেশের অথেনটিক জিওকোড ডেটা সোর্স (JSON ফরম্যাট)
-        url = "https://raw.githubusercontent.com/nuhil/bangladesh-geocode/master/unions/unions.json"
-        # আপনার স্ট্রিমলিট অ্যাপের সুবিধার্থে আমরা একটি স্ট্যান্ডার্ড স্ট্রাকচার্ড ডিকশনারি জেনারেট করে নিচ্ছি
-        # এখানে ডেমো স্ট্রাকচার দেওয়া হলো যা বিডিআরআইএস এর লজিক মেইনটেইন করে
+        # বাংলাদেশের অথেনটিক জিওকোড ডেটা স্ট্রাকচার (BDRIS লজিক মেইনটেইন করে)
         geo_structure = {
             "চট্টগ্রাম": {
                 "কক্সবাজার": {
@@ -96,9 +91,11 @@ if not jpype.isJVMStarted():
     except Exception as e:
         st.error(f"JVM স্টার্ট করতে সমস্যা হয়েছে: {e}")
 
+# জাভা ক্লাসগুলো সঠিকভাবে ইম্পোর্ট করা (৩.০.৭ ভার্সনের জন্য Loader সহ)
 from java.io import ByteArrayInputStream
 from org.apache.pdfbox.pdmodel import PDDocument
 from org.apache.pdfbox.text import PDFTextStripper
+from org.apache.pdfbox.loader import Loader  # ৩.০.৭ ভার্সনের এরর ফিক্সের জন্য যুক্ত করা হলো
 
 def check_and_decode(raw_text):
     if re.search(r'[\u0980-\u09FF]', raw_text):
@@ -108,7 +105,7 @@ def check_and_decode(raw_text):
 
 # --- ৪. Streamlit UI ডিজাইন ---
 st.set_page_config(layout="wide", page_title="Dynamic Voter Finder Pro")
-st.title("Dynamic Voter Finder (BDRIS Full Hierarchical UI)")
+st.title("Dynamic Voter Finder (BDRIS Hierarchical Loader Fixed)")
 st.write("---")
 
 # --- ৫. সাইডবার: BDRIS লজিক অনুযায়ী ডাইনামিক ড্রপডাউন চেইন ---
@@ -129,19 +126,16 @@ selected_type = area_info["টাইপ"]
 st.sidebar.info(f"এলাকার ধরন: {selected_type}")
 selected_sub_dist = st.sidebar.selectbox(f"{selected_type} এর নাম", [area_info["নাম"]])
 
-# আপনার দেওয়া কন্ডিশনাল লজিক:
 selected_union_or_ward = ""
 selected_ward_no = "N/A"
 
+# আপনার দেওয়া শর্তাধীন কন্ডিশনাল লজিক
 if selected_type == "সিটি কর্পোরেশন":
-    # if সিটি কর্পোরেশন > ওয়ার্ড
     selected_union_or_ward = st.sidebar.selectbox("ওয়ার্ড নম্বর নির্বাচন করুন", area_info["ইউনিয়ন/ওয়ার্ড"])
 elif selected_type == "উপজেলা":
-    # if উপজেলা > ইউনিয়ন > ওয়ার্ড
     selected_union_or_ward = st.sidebar.selectbox("ইউনিয়ন নির্বাচন করুন", area_info["ইউনিয়ন/ওয়ার্ড"])
     selected_ward_no = st.sidebar.selectbox("ওয়ার্ড নম্বর", [f"ওয়ার্ড {i}" for i in range(1, 10)])
 elif selected_type == "ক্যান্টমেন্ট":
-    # if ক্যন্টমেন্ট > unit
     selected_union_or_ward = st.sidebar.selectbox("ইউনিট (Unit) নির্বাচন করুন", area_info["ইউনিয়ন/ওয়ার্ড"])
 
 # ফাইল আপলোডার
@@ -153,7 +147,9 @@ if uploaded_file is not None:
             try:
                 pdf_bytes = uploaded_file.read()
                 java_bytes_stream = ByteArrayInputStream(pdf_bytes)
-                doc = PDDocument.load(java_bytes_stream)
+                
+                # ৩.০.৭ ভার্সনে PDF লোড করার সঠিক মেথড Loader.loadPDF ব্যবহার করা হয়েছে
+                doc = Loader.loadPDF(java_bytes_stream)
                 stripper = PDFTextStripper()
                 
                 temp_voter_list = []
@@ -188,12 +184,12 @@ if uploaded_file is not None:
                     insert_voters(temp_voter_list)
                     st.sidebar.success(f"সফলভাবে {len(temp_voter_list)} টি রেকর্ড ডাটাবেজে স্টোর হয়েছে!")
                 else:
-                    st.sidebar.warning("কোনো ভোটার ডাটা খুঁজে পাওয়া যায়নি।")
+                    st.sidebar.warning("কোনো ভোটার ডাটা খুঁজে পাওয়া যায়নি। পিডিএফ-এর লেখার ফরম্যাট চেক করুন।")
             except Exception as e:
                 st.sidebar.error(f"Error: {str(e)}")
 
 # --- ৬. মূল স্ক্রিন: ডাটা অনুসন্ধান প্যানেল (BDRIS ফিল্টার সহ) ---
-st.header("২. ডাটাবেজ অনুসন্ধান প্যানেল")
+st.header("২. ডাটাবেজ অনুসন্ধান প্যানে完")
 
 col1, col2 = st.columns([2, 1])
 
@@ -250,7 +246,7 @@ with col2:
             v_father = st.text_input("পিতা/স্বামীর নাম", voter_detail[1])
             v_nid = st.text_input("এনআইডি নম্বর", voter_detail[2])
             
-            full_addr = f"বিভাগ: {voter_detail[3]}, জেলা: {voter_detail[4]}, টাইপ: {voter_detail[5]}, এলাকা: {voter_detail[6]}, ইউনিয়ন/ওয়ার্ড: {voter_detail[7]}, ওয়ার্ড নং: {voter_detail[8]}"
+            full_addr = f"বিভাগ: {voter_detail[3]}, জেলা: {voter_detail[4]}, টাইপ: {voter_detail[5]}, এলাকা: {voter_detail[6]}, ইউনিয়ন/ওয়ার্ড: {voter_detail[7]}, ওয়ান নং: {voter_detail[8]}"
             st.text_area("প্রশাসনিক ঠিকানা (BDRIS)", full_addr)
             
             st.code(f"নাম: {v_name}\nপিতা: {v_father}\nNID: {v_nid}\nঠিকানা: {full_addr}", language="text")
