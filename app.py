@@ -46,7 +46,7 @@ def insert_voters(voter_data_list):
 init_db()
 
 # --- ২. JPype ও PDFBox সেটআপ ---
-jar_path = "pdfbox-app-3.0.0.jar" 
+jar_path = "pdfbox-app-3.0.7.jar" 
 if not jpype.isJVMStarted():
     try:
         jpype.startJVM(convertStrings=True, classpath=[jar_path])
