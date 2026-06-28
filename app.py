@@ -46,14 +46,17 @@ def insert_voters(voter_data_list):
 init_db()
 
 # --- ২. JPype ও PDFBox সেটআপ ---
+# জার ফাইলের নাম আপনার ডাউনলোড করা ৩.০.৭ ভার্সনের সাথে মিলিয়ে দেওয়া হলো
 jar_path = "pdfbox-app-3.0.7.jar" 
+
 if not jpype.isJVMStarted():
     try:
         jpype.startJVM(convertStrings=True, classpath=[jar_path])
     except Exception as e:
         st.error(f"JVM স্টার্ট করতে সমস্যা হয়েছে: {e}")
 
-from bridge.java.io import ByteArrayInputStream
+# জাভা ক্লাসগুলো সঠিকভাবে ইম্পোর্ট করা (সংশোধিত)
+from java.io import ByteArrayInputStream
 from org.apache.pdfbox.pdmodel import PDDocument
 from org.apache.pdfbox.text import PDFTextStripper
 
@@ -77,7 +80,7 @@ st.write("---")
 # সাইডবার: ডাটা ইনপুট ও ফাইল আপলোড প্যানেল
 st.sidebar.header("১. ডেটা ইম্পোর্ট ও আপলোড")
 selected_district = st.sidebar.selectbox("জেলা সিলেক্ট করুন", ["কক্সবাজার", "চট্টগ্রাম", "ঢাকা"])
-selected_upazila = st.sidebar.selectbox("উপজেলা সিলেক্ট করুন", ["উখিয়া", "টেকনাফ", "চন্দনাইশ"])
+selected_upazila = st.sidebar.selectbox("উপজেলা সিলেক্ট করুন", ["উখিয়া", "টেকনাফ", "চন্দнайш"])
 
 uploaded_file = st.sidebar.file_uploader("ভোটার তালিকার PDF আপলোড করুন", type=["pdf"])
 
@@ -127,7 +130,7 @@ if uploaded_file is not None:
             except Exception as e:
                 st.sidebar.error(f"Error: {str(e)}")
 
-# --- ৫. মূল স্ক্রিন: ডেটা সার্চ এবং ফাইন্ড আউট UI (ভিডিওর মতো ২ কলাম) ---
+# --- ৫. মূল স্ক্রিন: ডেটা সার্চ এবং ফাইন্ডアウト UI (ভিডিওর মতো ২ কলাম) ---
 st.header("২. ডাটাবেজ অনুসন্ধান প্যানেল")
 
 col1, col2 = st.columns([2, 1])
@@ -169,7 +172,6 @@ with col1:
         st.write(f"মোট রেকর্ড পাওয়া গেছে: {len(df)} টি")
         
         # স্ট্রিমলিটের কাস্টম ডাটা এডিটর/টেবিল যা সিলেক্ট করা যায়
-        # ব্যবহারকারী যেকোনো সারিতে ক্লিক করতে পারবেন
         st.dataframe(df, use_container_width=True, hide_index=True)
     else:
         st.info("ডাটাবেজে কোনো রেকর্ড পাওয়া যায়নি অথবা ফিল্টারের সাথে মিলেনি।")
@@ -177,7 +179,7 @@ with col1:
 with col2:
     st.subheader("বিস্তারিত প্রোফাইল")
     if not df.empty:
-        # ইউজার ডাটাবেজের কোন আইডিটি দেখতে চান তা সিলেক্ট করার অপশন (ভিডিওর সিঙ্গেল ভিউর মতো)
+        # ইউজার ডাটাবেজের কোন আইডিটি দেখতে চান তা সিলেক্ট করার অপশন
         selected_id = st.selectbox("বিস্তারিত দেখতে আইডি (ID) সিলেক্ট করুন:", df['id'].tolist())
         
         # নির্দিষ্ট আইডির ডাটা তুলে আনা
@@ -188,7 +190,7 @@ with col2:
         conn.close()
         
         if voter_detail:
-            # টেক্সটবক্সে ডাটা শো করা (ভিডিওর মতো এডিটেবল বা ভিউ মোড)
+            # টেক্সটবক্সে ডাটা শো করা
             v_name = st.text_input("ভোটারের নাম", voter_detail[0])
             v_father = st.text_input("পিতা/স্বামীর নাম", voter_detail[1])
             v_nid = st.text_input("এনআইডি নম্বর", voter_detail[2])
