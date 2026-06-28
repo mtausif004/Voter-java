@@ -4,63 +4,52 @@ import jpype
 import jpype.imports
 import sqlite3
 import re
-import urllib.request
-import json
+import os
 
-# --- ১. সারা বাংলাদেশের অ্যাড্রেস ডেটাবেজ অটো-লোডার (BDRIS / BD Geocode) ---
+# --- 1. ALL 64 DISTRICTS COMPLETE GEOGRAPHIC DATA (Verified Structure) ---
 @st.cache_data
-def load_bangladesh_geo_framework():
-    """
-    ওপেন সোর্স গিটহাব এপিআই (API) থেকে সারা বাংলাদেশের ৮টি বিভাগ, ৬৪টি জেলা এবং
-    সব উপজেলার অফিশিয়াল তালিকা এবং কন্ডিশনাল স্ট্রাকচার লাইভ রিড করার ফাংশন।
-    """
-    try:
-        # বাংলাদেশের বিশ্বস্ত জিওকোড ডেটা সোর্স (ডাইনামিক এপিআই রিকোয়েস্ট)
-        url = "https://raw.githubusercontent.com/nuhil/bangladesh-geocode/master/unions/unions.json"
-        
-        # আমরা BDRIS ওয়েবসাইট ভিত্তিক স্ট্যান্ডার্ড হায়ারার্কি স্ট্রাকচার বিল্ড করছি
-        # ব্যবহারকারীর কন্ডিশন অনুযায়ী: বিভাগ > জেলা > সিটি কর্পোরেশন/ক্যান্টনমেন্ট/উপজেলা > ইউনিয়ন/ওয়ার্ড
-        base_structure = {
-            "চট্টগ্রাম": {
-                "কক্সবাজার": {"টাইপ": "উপজেলা", "নাম": "উখিয়া", "ইউনিয়ন/ওয়ার্ড": ["পালংখালী", "রত্নাপালং", "হলদিয়াপালং", "জালিয়াপালং", "রাজাপালং"]},
-                "চট্টগ্রাম": {"টাইপ": "সিটি কর্পোরেশন", "নাম": "চট্টগ্রাম সিটি কর্পোরেশন", "ইউনিয়ন/ওয়ার্ড": [f"ওয়ার্ড নং {i}" for i in range(1, 42)]},
-                "কুমিল্লা": {"টাইপ": "ক্যান্টনমেন্ট", "নাম": "কুমিল্লা সেনানিবাস", "ইউনিয়ন/ওয়ার্ড": ["Unit 1", "Unit 2", "Unit 3"]},
-                "বান্দরবান": {"টাইপ": "উপজেলা", "নাম": "বান্দরবান সদর", "ইউনিয়ন/ওয়ার্ড": ["বান্দরবান", "রাজবিলা", "কুহালং"]},
-                "ব্রাহ্মণবাড়িয়া": {"টাইপ": "উপজেলা", "নাম": "বাঞ্ছারামপুর", "ইউনিয়ন/ওয়ার্ড": ["ছয়ফুল্লাকান্দি", "দরিয়াবাদ", "ফরদাবাদ"]}
-            },
-            "ঢাকা": {
-                "ঢাকা": {"টাইপ": "সিটি কর্পোরেশন", "নাম": "ঢাকা উত্তর সিটি", "ইউনিয়ন/ওয়ার্ড": [f"ওয়ার্ড নং {i}" for i in range(1, 55)]},
-                "গাজীপুর": {"টাইপ": "উপজেলা", "নাম": "শ্রীপুর", "ইউনিয়ন/ওয়ার্ড": ["গাজীপুর", "কাওরাইদ", "মাওনা"]},
-                "নারায়ণগঞ্জ": {"টাইপ": "সিটি কর্পোরেশন", "নাম": "নারায়ণগঞ্জ সিটি", "ইউনিয়ন/ওয়ার্ড": [f"ওয়ার্ড নং {i}" for i in range(1, 28)]}
-            },
-            "রাজশাহী": {
-                "বগুড়া": {"টাইপ": "উপজেলা", "নাম": "বগুড়া সদর", "ইউনিয়ন/ওয়ার্ড": ["ফাঁপোর", "সাবগ্রাম", "নিشিন্দারা"]},
-                "রাজশাহী": {"টাইপ": "সিটি কর্পোরেশন", "নাম": "রাজশাহী সিটি", "ইউনিয়ন/ওয়ার্ড": [f"ওয়ার্ড নং {i}" for i in range(1, 31)]}
-            },
-            "খুলনা": {
-                "যশোর": {"টাইপ": "উপজেলা", "নাম": "ঝিকরগাছা", "ইউনিয়ন/ওয়ার্ড": ["গঙ্গানন্দপুর", "মাগুরা", "ঝিকরগাছা"]},
-                "খুলনা": {"টাইপ": "সিটি কর্পোরেশন", "নাম": "খুলনা সিটি", "ইউনিয়ন/ওয়ার্ড": [f"ওয়ার্ড নং {i}" for i in range(1, 32)]}
-            },
-            "বরিশাল": {
-                "বরিশাল": {"টাইপ": "সিটি কর্পোরেশন", "নাম": "বরিশাল সিটি কর্পোরেশন", "ইউনিয়ন/ওয়ার্ড": [f"ওয়ার্ড নং {i}" for i in range(1, 31)]}
-            },
-            "সিলেট": {
-                "সিলেট": {"টাইপ": "সিটি কর্পোরেশন", "নাম": "সিলেট সিটি কর্পোরেশন", "ইউনিয়ন/ওয়ার্ড": [f"ওয়ার্ড নং {i}" for i in range(1, 43)]}
-            },
-            "রংপুর": {
-                "দিনাজপুর": {"টাইপ": "উপজেলা", "নাম": "দিনাজপুর সদর", "ইউনিয়ন/ওয়ার্ড": ["চেহেলগাজী", "সুন্দরপুর", "ফাজিলপুর"]}
-            },
-            "ময়মনসিংহ": {
-                "ময়মনসিংহ": {"টাইপ": "সিটি কর্পোরেশন", "নাম": "ময়মনসিংহ সিটি কর্পোরেশন", "ইউনিয়ন/ওয়ার্ড": [f"ওয়ার্ড নং {i}" for i in range(1, 34)]}
-            }
-        }
-        return base_structure
-    except Exception:
-        return {}
+def load_bangladesh_complete_geo():
+    """Google & GitHub source theke verified Bangladesh er 8 division o 64 district er master structure"""
+    return {
+        "Dhaka (ঢাকা)": [
+            "Dhaka (ঢাকা)", "Gazipur (গাজীপুর)", "Narayanganj (নারায়ণগঞ্জ)", "Tangail (টাঙ্গাইল)",
+            "Narsingdi (নরসিংদী)", "Manikganj (মানিকগঞ্জ)", "Munshiganj (মুন্সিগঞ্জ)", "Faridpur (ফরিদপুর)",
+            "Madaripur (মাদারীপুর)", "Gopalganj (গোপালগঞ্জ)", "Rajbari (রাজবাড়ী)", "Shariatpur (শরীয়তপুর)", 
+            "Kishoreganj (কিশোরগঞ্জ)"
+        ],
+        "Chattogram (চট্টগ্রাম)": [
+            "Chattogram (চট্টগ্রাম)", "Cox's Bazar (কক্সবাজার)", "Cumilla (কুমিল্লা)", "Feni (ফেনী)",
+            "Brahmanbaria (ব্রাহ্মণবাড়িয়া)", "Noakhali (নোয়াখালী)", "Chandpur (চাঁদপুর)", "Lakshmipur (লক্ষ্মীপুর)",
+            "Rangamati (রাঙ্গামাটি)", "Khagrachhari (খাগড়াছড়ি)", "Bandarban (বান্দরবান)"
+        ],
+        "Rajshahi (রাজশাহী)": [
+            "Rajshahi (রাজশাহী)", "Bogra (বগুড়া)", "Pabna (পাবনা)", "Sirajganj (সিরাজগঞ্জ)", 
+            "Natore (নাটোর)", "Naogaon (নওগাঁ)", "Chapainawabganj (চাঁপাইনবাবগঞ্জ)", "Joypurhat (জয়পুরহাট)"
+        ],
+        "Khulna (খুলনা)": [
+            "Khulna (খুলনা)", "Jessore (যশোর)", "Kushtia (কুষ্টিয়া)", "Magura (মাগুরা)", 
+            "Narail (নড়াইল)", "Bagerhat (বাগেরহাট)", "Satkhira (ساتক্ষীরা)", "Jhenaidah (ঝিনাইদহ)", 
+            "Chuadanga (চুয়াডাঙ্গা)", "Meherpur (মেহেরপুর)"
+        ],
+        "Barishal (বরিশাল)": [
+            "Barishal (বরিশাল)", "Patuakhali (পটুয়াখালী)", "Bhola (ভোলা)", "Pirojpur (পিরোজপুর)", 
+            "Barguna (বরগুনা)", "Jhalokati (ঝালকাঠি)"
+        ],
+        "Sylhet (সিলেট)": [
+            "Sylhet (সিলেট)", "Moulvibazar (মৌলভীবাজার)", "Habiganj (হবিগঞ্জ)", "Sunamganj (সুনামগঞ্জ)"
+        ],
+        "Rangpur (রংপুর)": [
+            "Rangpur (রংপুর)", "Dinajpur (দিনাজপুর)", "Gaibandha (গাইবান্ধা)", "Kurigram (কুড়িগ্রাম)", 
+            "Nilphamari (নীলফামারী)", "Lalmonirhat (লালমনিরহাট)", "Panchagarh (পঞ্চগড়)", "Thakurgaon (ঠাকুরগাঁও)"
+        ],
+        "Mymensingh (ময়মনসিংহ)": [
+            "Mymensingh (ময়মনসিংহ)", "Jamalpur (জামালপুর)", "Netrokona (নেত্রকোনা)", "Sherpur (শেরপুর)"
+        ]
+    }
 
-geo_data = load_bangladesh_geo_framework()
+geo_data = load_bangladesh_complete_geo()
 
-# --- ২. SQLite ডাটাবেজ সেটআপ (BDRIS স্ট্যান্ডার্ড কলাম সহ) ---
+# --- 2. SQLite Database Setup ---
 DB_NAME = "voter_database.db"
 
 def init_db():
@@ -100,15 +89,14 @@ def insert_voters(voter_data_list):
 
 init_db()
 
-# --- ৩. JPype ও PDFBox সেটআপ (ক্র্যাশ-প্রুফ JClass মেথড) ---
+# --- 3. JPype & Apache PDFBox Setup (JClass Server Friendly) ---
 jar_path = "pdfbox-app-3.0.7.jar" 
 if not jpype.isJVMStarted():
     try:
         jpype.startJVM(convertStrings=True, classpath=[jar_path])
     except Exception as e:
-        st.error(f"JVM স্টার্ট করতে সমস্যা হয়েছে: {e}")
+        st.error(f"JVM Start korte problem hoyeche: {e}")
 
-# সার্ভার ফ্রেন্ডলি ক্লাস লোডার
 ByteArrayInputStream = jpype.JClass("java.io.ByteArrayInputStream")
 PDDocument = jpype.JClass("org.apache.pdfbox.pdmodel.PDDocument")
 PDFTextStripper = jpype.JClass("org.apache.pdfbox.text.PDFTextStripper")
@@ -120,95 +108,80 @@ def check_and_decode(raw_text):
     bijoy_map = {'w': 'ি', 'v': 'া', 'b': 'ন', 'g': '।', 'A': 'আ', 'g': 'গ', 'h': 'ব', 'j': 'ক', 'l': 'ত', 'm': 'ম', 'n': 'ন', 'p': 'প', 'r': 'র', 's': 'স', 't': 'ত', 'u': 'ু', 'z': 'য'}
     return "".join([bijoy_map.get(char, char) for char in raw_text])
 
-# --- ৪. Streamlit UI ডিজাইন ---
+# --- 4. Streamlit UI ---
 st.set_page_config(layout="wide", page_title="Dynamic Voter Finder Pro")
-st.title("Dynamic Voter Finder (All Bangladesh Live DB)")
+st.title("Dynamic Voter Finder (64 Districts Complete)")
 st.write("---")
 
-# --- ৫. সাইডবার: BDRIS লজিক অনুযায়ী ড্রপডাউন চেইন ---
-st.sidebar.header("১. ডেটা ইম্পোর্ট ও এলাকা নির্বাচন")
+# --- 5. Sidebar: Dynamic Chain Selection ---
+st.sidebar.header("1. Area Selection & PDF Upload")
 
-# ১. বিভাগ নির্বাচন (ডাইনামিক)
-divisions = list(geo_data.keys()) if geo_data else ["চট্টগ্রাম", "ঢাকা"]
-selected_division = st.sidebar.selectbox("বিভাগ সিলেক্ট করুন", divisions)
+divisions = list(geo_data.keys())
+selected_division = st.sidebar.selectbox("বিভাগ সিলেক্ট করুন (Division)", divisions)
 
-# ২. জেলা নির্বাচন (বিভাগের ওপর ভিত্তি করে অটো-আপডেট)
-districts = list(geo_data.get(selected_division, {}).keys())
-selected_district = st.sidebar.selectbox("জেলা সিলেক্ট করুন", districts)
+districts = geo_data.get(selected_division, [])
+selected_district = st.sidebar.selectbox("জেলা সিলেক্ট করুন (District)", districts)
 
-# এরিয়া টাইপ এবং সাব-ডিস্ট্রিক্ট লজিক রিড করা
-area_info = geo_data.get(selected_division, {}).get(selected_district, {"টাইপ": "উপজেলা", "নাম": "সদর", "ইউনিয়ন/ওয়ার্ড": []})
-selected_type = area_info["টাইপ"]
+selected_type = st.sidebar.selectbox("এলাকার ধরন (Area Type)", ["উপজেলা (Upazila)", "সিটি কর্পোরেশন (City Corp)", "পৌরসভা (Pourashava)", "ক্যান্টনমেন্ট (Cantonment)"])
 
-st.sidebar.info(f"এলাকার ধরন: {selected_type}")
-selected_sub_dist = st.sidebar.selectbox(f"{selected_type} এর নাম", [area_info["नाम"]])
+# Complete accurate field entry (Ekta data o jeno miss na jay)
+selected_sub_dist = st.sidebar.text_input(f"{selected_type} এর নাম লিখুন", placeholder="উদা: উখিয়া / উত্তর সিটি")
+selected_union_or_ward = st.sidebar.text_input("ইউনিয়ন / ওয়ার্ড / ইউনিটের নাম লিখুন", placeholder="উদা: রাজাপালং / ওয়ার্ড নং ১")
+selected_ward_no = st.sidebar.text_input("গ্রাম / পাড়া / অতিরিক্ত তথ্য (ঐচ্ছিক)", placeholder="উদা: গ্রাম- ১নং ওয়ার্ড")
 
-selected_union_or_ward = ""
-selected_ward_no = "N/A"
-
-# আপনার দেওয়া BDRIS শর্তসমূহ (Conditional Logics)
-if selected_type == "সিটি কর্পোরেশন":
-    # if সিটি কর্পোরেশন > ওয়ার্ড
-    selected_union_or_ward = st.sidebar.selectbox("ওয়ার্ড নম্বর নির্বাচন করুন", area_info["ইউনিয়ন/ওয়ার্ড"])
-elif selected_type == "উপজেলা":
-    # if উপজেলা > ইউনিয়ন > ওয়ার্ড
-    selected_union_or_ward = st.sidebar.selectbox("ইউনিয়ন নির্বাচন করুন", area_info["ইউনিয়ন/ওয়ার্ড"])
-    selected_ward_no = st.sidebar.selectbox("ওয়ার্ড নম্বর সিলেক্ট করুন", [f"ওয়ার্ড {i}" for i in range(1, 10)])
-elif selected_type == "ক্যান্টমেন্ট":
-    # if ক্যন্টমেন্ট > unit
-    selected_union_or_ward = st.sidebar.selectbox("ইউনিট (Unit) নির্বাচন করুন", area_info["ইউনিয়ন/ওয়ার্ড"])
-
-# ফাইল আপলোডার
 uploaded_file = st.sidebar.file_uploader("ভোটার তালিকার PDF আপলোড করুন", type=["pdf"])
 
 if uploaded_file is not None:
-    if st.sidebar.button("PDF প্রসেс এবং ডাটাবেজে সেভ করুন"):
-        with st.spinner('PDFBox এর মাধ্যমে ডাটা এক্সট্র্যাক্ট ও SQLite-এ সেভ হচ্ছে...'):
-            try:
-                pdf_bytes = uploaded_file.read()
-                java_bytes_stream = ByteArrayInputStream(pdf_bytes)
-                
-                doc = Loader.loadPDF(java_bytes_stream)
-                stripper = PDFTextStripper()
-                
-                temp_voter_list = []
-                
-                for page_num in range(1, doc.getNumberOfPages() + 1):
-                    stripper.setStartPage(page_num)
-                    stripper.setEndPage(page_num)
-                    page_text = stripper.getText(doc)
+    if st.sidebar.button("PDF প্রসেস এবং ডাটাবেজে সেভ করুন"):
+        if not selected_sub_dist or not selected_union_or_ward:
+            st.sidebar.error("⚠️ দয়া করে উপজেলার নাম এবং ইউনিয়ন/ওয়ার্ডের নাম ইনপুট দিন!")
+        else:
+            with st.spinner('PDFBox er madhome data extract hocche...'):
+                try:
+                    pdf_bytes = uploaded_file.read()
+                    java_bytes_stream = ByteArrayInputStream(pdf_bytes)
                     
-                    decoded_text = check_and_decode(page_text)
-                    names = re.findall(r'নাম:\s*(.*)', decoded_text)
-                    fathers = re.findall(r'পিতা:\s*(.*)', decoded_text)
-                    nids = re.findall(r'জাতীয় পরিচয়পত্র নং:\s*(\d+)', decoded_text)
+                    doc = Loader.loadPDF(java_bytes_stream)
+                    stripper = PDFTextStripper()
                     
-                    for i in range(len(names)):
-                        temp_voter_list.append({
-                            "division": selected_division,
-                            "district": selected_district,
-                            "area_type": selected_type,
-                            "sub_district": selected_sub_dist,
-                            "union_or_ward": selected_union_or_ward,
-                            "ward_no": selected_ward_no,
-                            "name": names[i].strip(),
-                            "father_name": fathers[i].strip() if i < len(fathers) else "N/A",
-                            "nid": nids[i].strip() if i < len(nids) else "N/A",
-                            "raw_text": decoded_text
-                        })
-                
-                doc.close()
-                
-                if temp_voter_list:
-                    insert_voters(temp_voter_list)
-                    st.sidebar.success(f"সফলভাবে {len(temp_voter_list)} টি রেকর্ড ডাটাবেজে স্টোর হয়েছে!")
-                else:
-                    st.sidebar.warning("কোনো ভোটার ডাটা খুঁজে পাওয়া যায়নি।")
-            except Exception as e:
-                st.sidebar.error(f"Error: {str(e)}")
+                    temp_voter_list = []
+                    
+                    for page_num in range(1, doc.getNumberOfPages() + 1):
+                        stripper.setStartPage(page_num)
+                        stripper.setEndPage(page_num)
+                        page_text = stripper.getText(doc)
+                        
+                        decoded_text = check_and_decode(page_text)
+                        names = re.findall(r'নাম:\s*(.*)', decoded_text)
+                        fathers = re.findall(r'পিতা:\s*(.*)', decoded_text)
+                        nids = re.findall(r'জাতীয় পরিচয়পত্র নং:\s*(\d+)', decoded_text)
+                        
+                        for i in range(len(names)):
+                            temp_voter_list.append({
+                                "division": selected_division,
+                                "district": selected_district,
+                                "area_type": selected_type,
+                                "sub_district": selected_sub_dist.strip(),
+                                "union_or_ward": selected_union_or_ward.strip(),
+                                "ward_no": selected_ward_no.strip() if selected_ward_no else "N/A",
+                                "name": names[i].strip(),
+                                "father_name": fathers[i].strip() if i < len(fathers) else "N/A",
+                                "nid": nids[i].strip() if i < len(nids) else "N/A",
+                                "raw_text": decoded_text
+                            })
+                    
+                    doc.close()
+                    
+                    if temp_voter_list:
+                        insert_voters(temp_voter_list)
+                        st.sidebar.success(f"সফলভাবে {len(temp_voter_list)} টি রেকর্ড ডাটাবেজে স্টোর হয়েছে!")
+                    else:
+                        st.sidebar.warning("কোনো ভোটার ডাটা খুঁজে পাওয়া যায়নি।")
+                except Exception as e:
+                    st.sidebar.error(f"Error: {str(e)}")
 
-# --- ৬. মূল স্ক্রিন: ডাটা অনুসন্ধান প্যানেল ---
-st.header("২. ডাটাবেজ অনুসন্ধান প্যানেল")
+# --- 6. Main Dashboard Panel ---
+st.header("2. ভোটার অনুসন্ধান প্যানেল")
 
 col1, col2 = st.columns([2, 1])
 
@@ -219,9 +192,10 @@ with col1:
     with f_col1:
         filter_div = st.selectbox("বিভাগ ফিল্টার", ["সব বিভাগ"] + divisions)
     with f_col2:
-        filter_dist = st.selectbox("জেলা ফিল্টার", ["সব জেলা"] + (list(geo_data.get(filter_div, {}).keys()) if filter_div != "সব বিভাগ" else []))
+        available_districts = geo_data.get(filter_div, []) if filter_div != "সব বিভাগ" else []
+        filter_dist = st.selectbox("জেলা ফিল্টার", ["সব জেলা"] + available_districts)
     with f_col3:
-        search_query = st.text_input("নাম বা এনআইডি দিয়ে খুঁজুন (Live Search)")
+        search_query = st.text_input("নাম বা এনআইডি দিয়ে লাইভ সার্চ করুন")
 
     query = "SELECT id, division, district, area_type, sub_district, union_or_ward, name, father_name, nid FROM voters WHERE 1=1"
     params = []
@@ -263,7 +237,7 @@ with col2:
             v_father = st.text_input("পিতা/স্বামীর নাম", voter_detail[1])
             v_nid = st.text_input("এনআইডি নম্বর", voter_detail[2])
             
-            full_addr = f"বিভাগ: {voter_detail[3]}, জেলা: {voter_detail[4]}, টাইপ: {voter_detail[5]}, এলাকা: {voter_detail[6]}, ইউনিয়ন/ওয়ার্ড: {voter_detail[7]}, ওয়ার্ড নং: {voter_detail[8]}"
-            st.text_area("প্রশাসনিক ঠিকানা (BDRIS)", full_addr)
+            full_addr = f"বিভাগ: {voter_detail[3]}, জেলা: {voter_detail[4]}, ধরণ: {voter_detail[5]}, এলাকা: {voter_detail[6]}, ইউনিয়ন/ওয়ার্ড: {voter_detail[7]}, পাড়া/গ্রাম/ওয়ার্ড: {voter_detail[8]}"
+            st.text_area("প্রশাসনিক ঠিকানা", full_addr)
             
             st.code(f"নাম: {v_name}\nপিতা: {v_father}\nNID: {v_nid}\nঠিকানা: {full_addr}", language="text")
